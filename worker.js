@@ -8,15 +8,49 @@
 const GITHUB_PAGES_URL = 'https://banddude.github.io/officeadmin';
 const RAILWAY_URL = 'https://primary-production-3d94.up.railway.app';
 
+// GitHub Pages paths - these should be served from GitHub Pages instead of n8n
+const GITHUB_PAGES_PATHS = [
+  '/',
+  '/blog',
+  '/hello'
+];
+
+// Protected n8n paths - these should NEVER be served from GitHub Pages
+const PROTECTED_N8N_PATHS = [
+  '/signin',
+  '/workflows',
+  '/executions', 
+  '/credentials',
+  '/settings',
+  '/webhook',
+  '/api',
+  '/home',
+  '/rest',
+  '/assets',
+  '/static'
+];
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     
-    // If it's exactly the root path, serve GitHub Pages content
-    if (url.pathname === '/' || url.pathname === '') {
+    // Check if this path should be served from GitHub Pages
+    const isGitHubPagesPath = GITHUB_PAGES_PATHS.some(path => {
+      if (path === '/') {
+        return url.pathname === '/' || url.pathname === '';
+      }
+      return url.pathname === path || url.pathname.startsWith(path + '/');
+    });
+    
+    // Serve from GitHub Pages if it's a designated path
+    if (isGitHubPagesPath) {
       try {
-        // Fetch content from GitHub Pages
-        const githubResponse = await fetch(GITHUB_PAGES_URL);
+        // Construct GitHub Pages URL with the path
+        const githubUrl = url.pathname === '/' || url.pathname === '' 
+          ? GITHUB_PAGES_URL 
+          : `${GITHUB_PAGES_URL}${url.pathname}`;
+        
+        const githubResponse = await fetch(githubUrl);
         
         if (githubResponse.ok) {
           // Get the HTML content
