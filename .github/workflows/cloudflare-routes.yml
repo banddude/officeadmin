@@ -1,0 +1,214 @@
+name: Auto-manage Cloudflare Routes
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '*/index.html'  # Trigger when new page directories are added
+  workflow_dispatch:     # Allow manual triggers
+
+env:
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+
+jobs:
+  manage-routes:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 2  # Get current and previous commit for diff
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Install dependencies
+      run: npm install axios
+
+    - name: Manage Cloudflare Routes
+      run: |
+        cat << 'EOF' > manage-routes.js
+        const axios = require('axios');
+        const fs = require('fs');
+        const path = require('path');
+
+        // Protected routes - these cannot be used for GitHub Pages
+        const PROTECTED_ROUTES = [
+          '/signin',
+          '/workflows', 
+          '/executions',
+          '/credentials',
+          '/settings',
+          '/webhook',
+          '/api',
+          '/home',
+          '/rest',
+          '/assets',
+          '/static'
+        ];
+
+        const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
+        const CLOUDFLARE_ZONE_ID = process.env.CLOUDFLARE_ZONE_ID;
+
+        if (!CLOUDFLARE_API_TOKEN || !CLOUDFLARE_ZONE_ID) {
+          console.error('❌ Missing required environment variables');
+          process.exit(1);
+        }
+
+        async function getExistingRoutes() {
+          try {
+            const response = await axios.get(
+              `https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/workers/routes`,
+              {
+                headers: {
+                  'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+                  'Content-Type': 'application/json'
+                }
+              }
+            );
+            return response.data.result.map(route => route.pattern);
+          } catch (error) {
+            console.error('❌ Error fetching existing routes:', error.message);
+            process.exit(1);
+          }
+        }
+
+        async function createRoute(pattern) {
+          try {
+            const response = await axios.post(
+              `https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/workers/routes`,
+              {
+                pattern: pattern,
+                script: 'officeadmin-router'
+              },
+              {
+                headers: {
+                  'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+                  'Content-Type': 'application/json'
+                }
+              }
+            );
+            console.log(`✅ Created route: ${pattern}`);
+            return response.data.success;
+          } catch (error) {
+            console.error(`❌ Error creating route ${pattern}:`, error.message);
+            return false;
+          }
+        }
+
+        function findNewPages() {
+          const pages = [];
+          
+          // Find all directories with index.html files
+          function scanDirectory(dir, basePath = '') {
+            const items = fs.readdirSync(dir);
+            
+            for (const item of items) {
+              const fullPath = path.join(dir, item);
+              const relativePath = path.join(basePath, item);
+              
+              if (fs.statSync(fullPath).isDirectory()) {
+                // Skip hidden directories and special directories
+                if (item.startsWith('.') || item === 'node_modules') {
+                  continue;
+                }
+                
+                // Check if this directory has an index.html
+                const indexPath = path.join(fullPath, 'index.html');
+                if (fs.existsSync(indexPath)) {
+                  const routePath = '/' + relativePath.replace(/\\\\/g, '/');
+                  pages.push(routePath);
+                }
+                
+                // Recursively scan subdirectories
+                scanDirectory(fullPath, relativePath);
+              }
+            }
+          }
+          
+          scanDirectory('.');
+          
+          // Filter out root path (handled differently)
+          return pages.filter(page => page !== '/');
+        }
+
+        async function main() {
+          console.log('🔍 Scanning for GitHub Pages...');
+          
+          const newPages = findNewPages();
+          console.log('📄 Found pages:', newPages);
+          
+          if (newPages.length === 0) {
+            console.log('✨ No new pages found');
+            return;
+          }
+          
+          // Check for protected route conflicts
+          const conflicts = newPages.filter(page => 
+            PROTECTED_ROUTES.some(protected => 
+              page === protected || page.startsWith(protected + '/')
+            )
+          );
+          
+          if (conflicts.length > 0) {
+            console.error('🚫 ROUTE CONFLICT DETECTED!');
+            console.error('The following paths conflict with n8n routes:');
+            conflicts.forEach(conflict => console.error(`  - ${conflict}`));
+            console.error('\\nProtected routes:');
+            PROTECTED_ROUTES.forEach(route => console.error(`  - ${route}`));
+            console.error('\\n❌ Build failed to prevent n8n conflicts');
+            process.exit(1);
+          }
+          
+          // Get existing routes to avoid duplicates
+          console.log('📋 Checking existing Cloudflare routes...');
+          const existingRoutes = await getExistingRoutes();
+          
+          let routesCreated = 0;
+          
+          for (const page of newPages) {
+            const routePattern = `officeadmin.io${page}/*`;
+            
+            if (existingRoutes.includes(routePattern)) {
+              console.log(`⏭️  Route already exists: ${routePattern}`);
+              continue;
+            }
+            
+            console.log(`🚀 Creating route: ${routePattern}`);
+            const success = await createRoute(routePattern);
+            if (success) {
+              routesCreated++;
+            }
+          }
+          
+          if (routesCreated > 0) {
+            console.log(`\\n✅ Successfully created ${routesCreated} Cloudflare routes`);
+            console.log('🎉 Your new pages are now accessible!');
+          } else {
+            console.log('\\n✨ All routes already exist');
+          }
+        }
+
+        main().catch(error => {
+          console.error('❌ Script failed:', error);
+          process.exit(1);
+        });
+        EOF
+
+        node manage-routes.js
+
+    - name: Commit updated routes info (if any)
+      run: |
+        if [ -n "$(git status --porcelain)" ]; then
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add .
+          git commit -m "🤖 Auto-updated Cloudflare routes"
+          git push
+        else
+          echo "No changes to commit"
+        fi
