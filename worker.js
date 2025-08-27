@@ -46,9 +46,13 @@ export default {
     if (isGitHubPagesPath) {
       try {
         // Construct GitHub Pages URL with the path
-        const githubUrl = url.pathname === '/' || url.pathname === '' 
-          ? GITHUB_PAGES_URL 
-          : `${GITHUB_PAGES_URL}${url.pathname}`;
+        let githubUrl;
+        if (url.pathname === '/' || url.pathname === '') {
+          githubUrl = GITHUB_PAGES_URL;
+        } else {
+          // For GitHub Pages, we need to add /index.html to directory paths
+          githubUrl = `${GITHUB_PAGES_URL}${url.pathname}/index.html`;
+        }
         
         const githubResponse = await fetch(githubUrl);
         
