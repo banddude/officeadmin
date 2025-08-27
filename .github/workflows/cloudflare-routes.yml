@@ -266,5 +266,59 @@ jobs:
 
         node manage-routes.js
 
+    - name: Deploy Updated Worker (Manual Fix)
+      run: |
+        cat << 'EOF' > deploy-worker-direct.js
+        const fs = require('fs');
+        const axios = require('axios');
+
+        const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
+        const CLOUDFLARE_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
+
+        async function deployWorker() {
+          try {
+            console.log('📦 Reading worker from cloudflare branch...');
+            const { execSync } = require('child_process');
+            
+            // Make sure we're on cloudflare branch
+            execSync('git checkout cloudflare', { stdio: 'inherit' });
+            const workerCode = fs.readFileSync('worker.js', 'utf8');
+            
+            console.log('🚀 Deploying worker to Cloudflare...');
+            const response = await axios.put(
+              `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/officeadmin-router`,
+              workerCode,
+              {
+                headers: {
+                  'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+                  'Content-Type': 'application/javascript'
+                }
+              }
+            );
+            
+            if (response.data.success) {
+              console.log('✅ Worker deployed successfully!');
+              console.log('🔧 Case-insensitive routing is now active');
+              return true;
+            } else {
+              console.error('❌ Deployment failed:', response.data.errors);
+              return false;
+            }
+          } catch (error) {
+            console.error('❌ Error deploying worker:', error.response?.data || error.message);
+            return false;
+          }
+        }
+
+        deployWorker().then(success => {
+          if (success) {
+            console.log('🎉 Case-insensitive URLs now work!');
+          }
+          process.exit(success ? 0 : 1);
+        });
+        EOF
+
+        node deploy-worker-direct.js
+
     - name: Action completed
       run: echo "✅ Cloudflare routes management completed"
