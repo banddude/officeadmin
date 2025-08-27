@@ -3,6 +3,7 @@
  * - Serves GitHub Pages content at root (/) without URL changes
  * - Passes all other requests to Railway n8n instance
  * - Fixes Origin header for WebSocket connections and CORS
+ * - Auto-deployed from GitHub
  */
 
 const GITHUB_PAGES_URL = 'https://banddude.github.io/officeadmin';
