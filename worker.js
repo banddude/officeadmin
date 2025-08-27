@@ -36,12 +36,12 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     
-    // Check if this path should be served from GitHub Pages
+    // Check if this path should be served from GitHub Pages (case-insensitive)
     const isGitHubPagesPath = GITHUB_PAGES_PATHS.some(path => {
       if (path === '/') {
         return url.pathname === '/' || url.pathname === '';
       }
-      return url.pathname === path || url.pathname.startsWith(path + '/');
+      return url.pathname.toLowerCase() === path.toLowerCase() || url.pathname.toLowerCase().startsWith(path.toLowerCase() + '/');
     });
     
     // Serve from GitHub Pages if it's a designated path
@@ -52,8 +52,22 @@ export default {
         if (url.pathname === '/' || url.pathname === '') {
           githubUrl = GITHUB_PAGES_URL;
         } else {
-          // For GitHub Pages, we need to add /index.html to directory paths
-          githubUrl = `${GITHUB_PAGES_URL}${url.pathname}/index.html`;
+          // Find the matching case-sensitive path from GITHUB_PAGES_PATHS
+          const matchingPath = GITHUB_PAGES_PATHS.find(path => 
+            path.toLowerCase() === url.pathname.toLowerCase() ||
+            url.pathname.toLowerCase().startsWith(path.toLowerCase() + '/')
+          );
+          
+          if (matchingPath && matchingPath !== '/') {
+            // Use the correct case from GITHUB_PAGES_PATHS for GitHub Pages URL
+            const remainingPath = url.pathname.toLowerCase().startsWith(matchingPath.toLowerCase() + '/') 
+              ? url.pathname.slice(matchingPath.length)
+              : '';
+            githubUrl = `${GITHUB_PAGES_URL}${matchingPath}${remainingPath}/index.html`;
+          } else {
+            // Fallback to original path
+            githubUrl = `${GITHUB_PAGES_URL}${url.pathname}/index.html`;
+          }
         }
         
         const githubResponse = await fetch(githubUrl);
