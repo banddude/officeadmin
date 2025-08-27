@@ -10,6 +10,7 @@ on:
 env:
   CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
   CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
 jobs:
   manage-routes:
@@ -29,7 +30,7 @@ jobs:
     - name: Install dependencies
       run: npm install axios
 
-    - name: Manage Cloudflare Routes
+    - name: Update Worker and Manage Cloudflare Routes
       run: |
         cat << 'EOF' > manage-routes.js
         const axios = require('axios');
@@ -53,8 +54,9 @@ jobs:
 
         const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
         const CLOUDFLARE_ZONE_ID = process.env.CLOUDFLARE_ZONE_ID;
+        const CLOUDFLARE_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
 
-        if (!CLOUDFLARE_API_TOKEN || !CLOUDFLARE_ZONE_ID) {
+        if (!CLOUDFLARE_API_TOKEN || !CLOUDFLARE_ZONE_ID || !CLOUDFLARE_ACCOUNT_ID) {
           console.error('❌ Missing required environment variables');
           process.exit(1);
         }
@@ -136,6 +138,65 @@ jobs:
           return pages.filter(page => page !== '/');
         }
 
+        async function updateWorkerCode(pages) {
+          console.log('🔧 Updating worker code with new pages...');
+          
+          try {
+            // Read the current worker from cloudflare branch
+            const { execSync } = require('child_process');
+            
+            // Switch to cloudflare branch and get worker
+            execSync('git fetch origin cloudflare', { stdio: 'inherit' });
+            execSync('git checkout cloudflare', { stdio: 'inherit' });
+            
+            let workerCode = fs.readFileSync('worker.js', 'utf8');
+            
+            // Create the new paths array including root and all found pages
+            const allPaths = ['/'].concat(pages);
+            const pathsArray = allPaths.map(p => `  '${p}'`).join(',\\n');
+            
+            // Update the GITHUB_PAGES_PATHS array
+            const pathsRegex = /(const GITHUB_PAGES_PATHS = \\[)[\\s\\S]*?(\\];)/;
+            const newPathsSection = `const GITHUB_PAGES_PATHS = [
+${pathsArray}
+];`;
+            
+            workerCode = workerCode.replace(pathsRegex, newPathsSection);
+            
+            // Write the updated worker code
+            fs.writeFileSync('worker.js', workerCode);
+            
+            // Deploy the updated worker
+            const deployResponse = await axios.put(
+              `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/officeadmin-router`,
+              workerCode,
+              {
+                headers: {
+                  'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+                  'Content-Type': 'application/javascript'
+                }
+              }
+            );
+            
+            if (deployResponse.data.success) {
+              console.log('✅ Worker updated and deployed successfully');
+              
+              // Commit the updated worker
+              execSync('git add worker.js', { stdio: 'inherit' });
+              execSync(`git commit -m "Auto-update worker paths: ${pages.join(', ')}"`, { stdio: 'inherit' });
+              execSync('git push origin cloudflare', { stdio: 'inherit' });
+              
+              return true;
+            } else {
+              console.error('❌ Failed to deploy updated worker:', deployResponse.data.errors);
+              return false;
+            }
+          } catch (error) {
+            console.error('❌ Error updating worker:', error.message);
+            return false;
+          }
+        }
+
         async function main() {
           console.log('🔍 Scanning for GitHub Pages...');
           
@@ -185,11 +246,17 @@ jobs:
             }
           }
           
-          if (routesCreated > 0) {
+          // Update worker code with all found pages
+          const workerUpdated = await updateWorkerCode(newPages);
+          
+          if (routesCreated > 0 || workerUpdated) {
             console.log(`\\n✅ Successfully created ${routesCreated} Cloudflare routes`);
+            if (workerUpdated) {
+              console.log('✅ Worker code updated and deployed');
+            }
             console.log('🎉 Your new pages are now accessible!');
           } else {
-            console.log('\\n✨ All routes already exist');
+            console.log('\\n✨ All routes already exist and worker is up to date');
           }
         }
 
