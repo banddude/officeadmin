@@ -51,6 +51,21 @@ jobs:
           '/assets',
           '/static'
         ];
+        
+        // Create both uppercase and lowercase route variants
+        function createRouteVariants(pages) {
+          const variants = [];
+          for (const page of pages) {
+            variants.push(page); // Original case
+            if (page.toLowerCase() !== page) {
+              variants.push(page.toLowerCase()); // Lowercase version
+            }
+            if (page.toUpperCase() !== page) {
+              variants.push(page.toUpperCase()); // Uppercase version  
+            }
+          }
+          return [...new Set(variants)]; // Remove duplicates
+        }
 
         const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
         const CLOUDFLARE_ZONE_ID = process.env.CLOUDFLARE_ZONE_ID;
@@ -229,7 +244,11 @@ jobs:
           
           let routesCreated = 0;
           
-          for (const page of newPages) {
+          // Create routes for all case variants
+          const allRouteVariants = createRouteVariants(newPages);
+          console.log(`📝 Creating routes for variants: ${allRouteVariants.join(', ')}`);
+          
+          for (const page of allRouteVariants) {
             const routePattern = `officeadmin.io${page}/*`;
             
             if (existingRoutes.includes(routePattern)) {
