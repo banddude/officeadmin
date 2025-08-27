@@ -13,7 +13,8 @@ const RAILWAY_URL = 'https://primary-production-3d94.up.railway.app';
 const GITHUB_PAGES_PATHS = [
   '/',
   '/blog',
-  '/hello'
+  '/hello',
+  '/ReportKit'
 ];
 
 // Protected n8n paths - these should NEVER be served from GitHub Pages
