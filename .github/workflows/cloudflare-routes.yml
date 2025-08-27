@@ -201,14 +201,5 @@ jobs:
 
         node manage-routes.js
 
-    - name: Commit updated routes info (if any)
-      run: |
-        if [ -n "$(git status --porcelain)" ]; then
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add .
-          git commit -m "🤖 Auto-updated Cloudflare routes"
-          git push
-        else
-          echo "No changes to commit"
-        fi
+    - name: Action completed
+      run: echo "✅ Cloudflare routes management completed"
