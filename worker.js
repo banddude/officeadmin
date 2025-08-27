@@ -32,11 +32,8 @@ const PROTECTED_N8N_PATHS = [
   '/static'
 ];
 
-addEventListener('fetch', event => {
-  event.respondWith(handleRequest(event.request));
-});
-
-async function handleRequest(request) {
+export default {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     
     // Check if this path should be served from GitHub Pages
@@ -130,4 +127,5 @@ async function handleRequest(request) {
     });
     
     return newResponse;
-}
+  }
+};
