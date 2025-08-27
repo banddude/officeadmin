@@ -157,9 +157,7 @@ jobs:
             
             // Update the GITHUB_PAGES_PATHS array
             const pathsRegex = /(const GITHUB_PAGES_PATHS = \\[)[\\s\\S]*?(\\];)/;
-            const newPathsSection = `const GITHUB_PAGES_PATHS = [
-${pathsArray}
-];`;
+            const newPathsSection = 'const GITHUB_PAGES_PATHS = [\\n' + pathsArray + '\\n];';
             
             workerCode = workerCode.replace(pathsRegex, newPathsSection);
             
